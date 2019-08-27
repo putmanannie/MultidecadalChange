@@ -36,3 +36,46 @@ def summary(np, RTregresults, regresults):
         perctrue = sum(ss)/float(len(ss))
         print('% same sign: {}'.format(perctrue*100))
         print('----------------------------------------------')
+
+def regNums(np, regresults):
+    seas = ['JJA', 'DJF']
+    for i in range(2):
+        print('----------------------------------------------')
+        print('Season: {}'.format(seas[i]))        
+        #get number of regressions in the season
+        nregs = np.sum(~np.isnan(regresults[:, :, 2, i]))
+        nsigregs = np.sum((~np.isnan(regresults[:, :, 4, i]))&(regresults[:, :, 4, i] < 0.1))
+        print('Total # regressions: {}'.format(nregs))
+        print('# sig regressions (p < 0.1): {}'.format(nsigregs))
+        print('----------------------------------------------')
+    print('----------------------------------------------')
+    print('Both') 
+    
+    nregs = np.sum(~np.isnan(regresults[:, :, 2, 0])&~np.isnan(regresults[:, :, 2, 1]))
+    nsigregs = np.sum((~np.isnan(regresults[:, :, 4, 0]))&(regresults[:, :, 4, 0] < 0.1)&
+                (~np.isnan(regresults[:, :, 4, 1]))&(regresults[:, :, 4, 1] < 0.1))
+    print('Total # regression grid cells in both seasons: {}'.format(nregs))
+    print('# sig regressions (p < 0.1) in both seasons: {}'.format(nsigregs))
+    print('----------------------------------------------')
+    
+def dataNums(np, regresults, cgnmons):
+    seas = ['JJA', 'DJF']
+    for i in range(2):
+        print('----------------------------------------------')
+        print('Season: {}'.format(seas[i]))        
+        #get number of regressions in the season
+        nregs = np.sum(cgnmons[:, :, i][~np.isnan(regresults[:, :, 2, i])])
+        print('Total # grid-seasons of data: {}'.format(nregs))
+        print('----------------------------------------------')    
+
+def regressSlopes(np, sm, regresults, MODregresults):
+    print('Results for d18O slopes vs Pressure slopes:')
+    mask = ~np.isnan(regresults[:, :, 2, :])
+    y = regresults[:, :, 2, :][mask]
+    x = MODregresults[:, :, 2, :][mask]
+    corr = np.corrcoef(x, y)
+    print('Correlation coefficient: {}'.format(corr[0,1]))
+    x = sm.add_constant(x)
+    results = sm.OLS(y, x).fit()
+    print(results.summary())
+    

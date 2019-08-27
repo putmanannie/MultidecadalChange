@@ -65,30 +65,26 @@ def getCAM(os, np, nc4, copy, filename, CAMdir):
     
     return Lons, Lats, mons, years, dates, d18O, Pre, Tmp, PW, grids, pregrids, tmpgrids, pwgrids
 
-def getdata(os, np, nc4, csv, copy):
-    getiso = True
-    filestorage = """C:\Users\u0929173\Documents\waterisotopesorg\Intermediate_Data_Files"""
-    gridloc = """C:\Users\u0929173\Documents\waterisotopesorg\IsotopeMaps"""
+def getdata(os, np, nc4, csv, copy, ncfiles):
+
+    print('Reading NetCDF4 file...')
+    os.chdir(ncfiles)
+    f = nc4.Dataset('Precipitation_WI.nc', 'r', format = 'NETCDF4')
+    start = copy.copy(f.variables['start'][:])
+    start = np.datetime64(start[0])
+    t = copy.copy(f.variables['time'][:])
+    t = start + t.astype('timedelta64[D]')
     
-    if getiso:
-        print('Reading NetCDF4 file...')
-        os.chdir(filestorage)
-        f = nc4.Dataset('Precipitation_WI.nc', 'r', format = 'NETCDF4')
-        start = copy.copy(f.variables['start'][:])
-        start = np.datetime64(start[0])
-        t = copy.copy(f.variables['time'][:])
-        t = start + t.astype('timedelta64[D]')
-        
-        iso = copy.copy(f.variables['isoarray'][:])
-        Pre = copy.copy(f.variables['precip'][:])
-        Lats = copy.copy(f.variables['latitudes'][:])
-        Lons = copy.copy(f.variables['longitudes'][:])
-        SiteID = copy.copy(f.variables['siteid'][:])
-        SiteID = SiteID.astype('|S50')         
-        ProjectID = copy.copy(f.variables['projects'][:])
-        ProjectID = ProjectID.astype('|S6')
-        
-        f.close()
+    iso = copy.copy(f.variables['isoarray'][:])
+    Pre = copy.copy(f.variables['precip'][:])
+    Lats = copy.copy(f.variables['latitudes'][:])
+    Lons = copy.copy(f.variables['longitudes'][:])
+    SiteID = copy.copy(f.variables['siteid'][:])
+    SiteID = SiteID.astype('|S50')         
+    ProjectID = copy.copy(f.variables['projects'][:])
+    ProjectID = ProjectID.astype('|S6')
+    
+    f.close()
     iso[iso <= -9000] = np.nan
     Pre[Pre == -1] = np.nan
     #these are the bounds of the lat/lon boxes
@@ -107,9 +103,8 @@ def getdata(os, np, nc4, csv, copy):
         if (min(abs(Lats[i]-glats)) > boxsize) or (min(abs(Lons[i]-glons)) > boxsize):
             print(Lats[i], Lons[i])
         latlonind[i, :] = np.array([iy, ix])    
-    os.chdir(gridloc)
-    #make file names
 
+    #get annual grids 
     Hfilename = 'Hma.asc'
     Ofilename = 'Oma.asc'        
     j = 0

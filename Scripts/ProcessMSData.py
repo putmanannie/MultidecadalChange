@@ -36,9 +36,9 @@ def processCAM(os, np, nc4, copy, GetData, CAMdir):
     
     return Lons, Lats, icyears, d18O, Pre, Tmp, PW, grids, pregrids, tmpgrids, pwgrids
 
-def processData(os, np, nc4, csv, copy, GetData):
+def processData(os, np, nc4, csv, copy, GetData, ncfiles):
     (t, glons, glats, coarsegrid, 
-     pregrid, gridDelT, ninds) = GetData.getdata(os, np, nc4, csv, copy)
+     pregrid, gridDelT, ninds) = GetData.getdata(os, np, nc4, csv, copy, ncfiles)
 
     (cgseas, cgpre, pretot, 
      cgnmons, cgtcov, years, mons) = GetData.getseasonalgrids(np, glats, glons, 

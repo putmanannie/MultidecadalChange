@@ -49,7 +49,7 @@ getregrid = False
 
 #Get and process measurement data
 (glats, glons, cgseas, cgpre, pretot, cgnmons, 
-     cgtcov, years, mons) = ProcessData.processData(os, np, nc4, csv, copy, GetData)
+     cgtcov, years, mons) = ProcessData.processData(os, np, nc4, csv, copy, GetData, ncfiles)
 
 startind = np.where(np.unique(icyears) == np.min(years))[0][0]
 endind = np.where(np.unique(years) == np.max(icyears))[0][0]+1
@@ -96,6 +96,9 @@ RTregresults = GetChange.GetMultidecadalChange(np, sm, glats,
 #summarize comparison of residence time estimate and model or measurement slope estimate
 GetStats.summary(np, RTregresults, regresults)
 GetStats.summary(np, RTMODregresults, MODregresults)
+GetStats.regNums(np, regresults)
+GetStats.dataNums(np, regresults, cgnmons)
+GetStats.regressSlopes(np, sm, regresults, MODSUBregresults)
 #%%
 semidata = ProcessData.getSemivariograms(os, np, mpl, sp, pd, copy, ProcessData.distance, 
                                          ProcessData.fitSemiVariogram, regresults, 
@@ -139,8 +142,8 @@ MakeFigures.maritime(os, sm, mpl, df, aggplots)
 
 #make geopotential height figures
 MakeFigures.MakeGeopotentialRegress(os, np, mpl, ctp, ccrs, stacksNW, hgts, 
-                                    hgtlat, hgtlon, 'NW', '500')
+                                    hgtlat, hgtlon, 'NW', '500', aggplots)
 MakeFigures.MakeGeopotentialRegress(os, np, mpl, ctp, ccrs, stacksEur, hgts, 
-                                    hgtlat, hgtlon, 'Eur', '500')
+                                    hgtlat, hgtlon, 'Eur', '500', aggplots)
 MakeFigures.MakeStackFig(os, np, mpl, years, stacksNW, stacksNW_std, stacksSE, 
                          stacksSE_std, PNA_DJF, aggplots)
