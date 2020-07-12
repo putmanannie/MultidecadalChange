@@ -4,8 +4,15 @@ Created on Tue Mar 26 10:23:07 2019
 
 @author: u0929173
 """
+import os
+import numpy as np
+import netCDF4 as nc4
+import copy
+import csv
+import pandas as pd
+import datetime as dt
 
-def getCAM(os, np, nc4, copy, filename, CAMdir):
+def getCAM(filename, CAMdir):
     os.chdir(CAMdir)
     
     f = nc4.Dataset(filename, format = 'NETCDF4')
@@ -36,7 +43,7 @@ def getCAM(os, np, nc4, copy, filename, CAMdir):
     tmpgrids = copy.copy(grids)
     pwgrids = copy.copy(grids)
     #index zero is winter, index 1 is summer
-    midind = [7, 1]
+    midind = [1, 7]
     for i in range(len(Lats)):
         for j in range(len(Lons)):
             for k in range(2):
@@ -65,7 +72,7 @@ def getCAM(os, np, nc4, copy, filename, CAMdir):
     
     return Lons, Lats, mons, years, dates, d18O, Pre, Tmp, PW, grids, pregrids, tmpgrids, pwgrids
 
-def getdata(os, np, nc4, csv, copy, ncfiles):
+def getdata(ncfiles):
 
     print('Reading NetCDF4 file...')
     os.chdir(ncfiles)
@@ -77,6 +84,7 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
     
     iso = copy.copy(f.variables['isoarray'][:])
     Pre = copy.copy(f.variables['precip'][:])
+    Tmp = copy.copy(f.variables['temper'][:])
     Lats = copy.copy(f.variables['latitudes'][:])
     Lons = copy.copy(f.variables['longitudes'][:])
     SiteID = copy.copy(f.variables['siteid'][:])
@@ -87,6 +95,7 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
     f.close()
     iso[iso <= -9000] = np.nan
     Pre[Pre == -1] = np.nan
+    Tmp[Tmp <= -9000] = np.nan
     #these are the bounds of the lat/lon boxes
     boxsize = 5
     glats_edges = np.arange(-90, 95, boxsize)
@@ -111,13 +120,16 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
     #create the grid for matching
     with open(Hfilename, 'r') as f:
         freader = csv.reader(f, delimiter = '\t')
-        for j in range(6):
-            row = freader.next()
+        for row in freader:
             if  j == 0:
                 meta = np.array(row)[:, None] 
-            elif j <=5:
+            elif j <= 5:
                 meta = np.concatenate((meta, np.array(row)[:, None]), axis = 1)
-    f.close()
+            else:
+                f.close()
+                break
+            j = j+1
+    
 
     ncols = int(meta[1, 0])
     nrows = int(meta[1, 1])
@@ -136,7 +148,7 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
     with open(Hfilename, 'r') as f:  
         freader = csv.reader(f, delimiter = '\t')
         for _ in range(7):
-            row = freader.next()            
+            row = next(freader)                             
         isogrids[0, :, :, 0]  = np.reshape(np.array(row[:-1]).astype(float), (nrows, ncols), order = 'C')
     f.close()
    #oxygen is index 1
@@ -144,7 +156,7 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
         j = 0
         freader = csv.reader(f, delimiter = '\t')
         for _ in range(7):
-            row = freader.next()            
+            row = next(freader)            
         isogrids[0, :, :, 1]  = np.reshape(np.array(row[:-1]).astype(float), (nrows, ncols), order = 'C')
     f.close()
     isogrids[isogrids == fillval] = np.nan        
@@ -206,19 +218,24 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
                 canaggflag[i] = 0
     
     coarsegrid = np.zeros((len(glats), len(glons), len(t), 2))
+    projgrid = np.empty((len(glats), len(glons), len(t)), dtype='S50')
     pregrid = np.zeros((len(glats), len(glons), len(t)))
+    tmpgrid = copy.copy(pregrid)
     gridDelT = np.zeros((len(glats), len(glons)))
     ninds = np.zeros((len(glats), len(glons)))
     coarsegrid.fill(np.nan)
-
+    projgrid.fill('')
+    indlist = np.array([], dtype='int')
     for i in range(coarsegrid.shape[0]):
         for j in range(coarsegrid.shape[1]):
             inds = np.where((latlonind[:, 1] == j) & (latlonind[:, 0] == i))[0]
             #need to remove the non-aggregatable sites
             if any(inds):           
                 if (len(inds) > 1) and sum(canaggflag[inds]) > 0 and sum(canaggflag[inds])<len(inds):
+                    print(len(inds))
                     print('removing non-aggregatable sites {}'.format(inds[canaggflag[inds]==1]))
                     inds = inds[canaggflag[inds]==0]
+                    print(len(inds))
                 #print(len(inds))
                 #now aggregate the sites
                 #may also want to make a diagnostic plot of the sites that are part of the integration
@@ -226,7 +243,18 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
                     #add back the grid scale center value
                     coarsegrid[i, j, :, :] = np.nanmean(np.add(isoanom[inds, :, 1:3], coarsegridavg[j, i, :]), axis = 0)
                     pregrid[i, j, :] = np.nanmean(Pre[inds, :], axis = 0)
-                    
+                    tmpgrid[i, j, :] = np.nanmean(Tmp[inds, :], axis = 0)
+                    for k in range(len(t)):
+                        if any(ProjectID[inds, k]):
+                            prj = list(np.unique(ProjectID[inds, k][ProjectID[inds, k] != b'']))
+                            print(prj)
+                            if len(prj) == 1:
+                                print(prj[0])
+                                projgrid[i, j, k] = prj[0]
+                            else:
+                                prjs = b', '.join(prj)
+                                print(prjs)
+                                projgrid[i, j, k] = prjs
                 #this means that len(inds) == 1
                 else:
                     if (~np.isnan(coarsegridavg[j, i, :]).all()) and (canaggflag[inds] == 0):
@@ -234,23 +262,29 @@ def getdata(os, np, nc4, csv, copy, ncfiles):
                     else:
                         coarsegrid[i, j, :, :] = isoanom[inds, :, 1:3]
                     pregrid[i, j, :] = Pre[inds, :]
+                    tmpgrid[i, j, :] = Tmp[inds, :]
+                    for k in range(len(t)):
+                        projgrid[i, j, k] = ProjectID[inds[0], k]
                 
                 if ~np.isnan(isoanom[inds,:,1:3]).any(): 
                     mask = ~np.isnan(coarsegrid[i, j, :, 1])
                     gridDelT[i, j] = np.max(t.astype('datetime64[M]').astype(float)[mask]) - np.min(t.astype('datetime64[M]').astype(float)[mask])
-                    ninds[i, j] = len(inds)
+                #return a list of the station indices
+                indlist = np.concatenate((indlist, inds))
+    return t, glons, glats, coarsegrid, pregrid, gridDelT, ninds, tmpgrid, indlist, projgrid   
 
-    return t, glons, glats, coarsegrid, pregrid, gridDelT, ninds   
-
-def getseasonalgrids(np, glats, glons, coarsegrid, pregrid, t):
+def getseasonalgrids(glats, glons, coarsegrid, pregrid, t, tmpgrid, indlist, projgrid):
     #this part gets the seasonal average value for each coarse grid cell, then gets the regression slope
     seasdict = {'DJF': 1, 'JJA': 7}
     cgseas = np.zeros((len(glats), len(glons), len(np.unique(t.astype('datetime64[Y]').astype(float))), 2))
     cgseas.fill(np.nan)
     cgpre = np.zeros((len(glats), len(glons), len(np.unique(t.astype('datetime64[Y]').astype(float))), 2))
     pretot = np.zeros((len(glats), len(glons), len(np.unique(t.astype('datetime64[Y]').astype(float))), 2))
+    cgtmp = copy.copy(cgpre)
     cgnmons = np.zeros((len(glats), len(glons), 2))
     cgtcov = np.zeros((len(glats), len(glons), 2))
+    cgprjs = np.empty((len(glats), len(glons), len(np.unique(t.astype('datetime64[Y]').astype(float))), 2), dtype='S50')
+    cgprjs.fill('')    
     years = t.astype('datetime64[Y]').astype(float)+1970
     mons = t.astype('datetime64[M]').astype(float)%12
     for season, seasind in zip(seasdict.keys(), range(len(seasdict.keys()))):
@@ -263,13 +297,22 @@ def getseasonalgrids(np, glats, glons, coarsegrid, pregrid, t):
             vals = np.ma.array(coarsegrid[:, :, subinds, 1], mask = np.isnan(coarsegrid[:, :, subinds, 1]))
             
             wts = np.ma.array(pregrid[:, :, subinds], mask = np.isnan(coarsegrid[:, :, subinds, 1]))
-            pretot[:, :, i, seasind] = np.average(pregrid[:, :, subinds], axis = 2)
-            
+            pretot[:, :, i, seasind] = np.sum(pregrid[:, :, subinds], axis = 2)
+            cgtmp[:, :, i, seasind] = np.average(tmpgrid[:, :, subinds], axis = 2)
             cgseas[:, :, i, seasind], cgpre[:, :, i, seasind] = np.ma.average(vals, weights = wts, axis = 2, returned = True) 
             #apply the precipitation threshold
             cgseas[:, :, i, seasind] = np.where(np.divide(cgpre[:, :, i, seasind], pretot[:, :, i, seasind]) >= 0.5, cgseas[:, :, i, seasind], np.nan)
-
-    
+            for loni in range(len(glons)):
+                for lati in range(len(glats)):
+                    if any(projgrid[lati, loni, subinds]):
+                        prj = list(np.unique(projgrid[lati, loni, subinds][projgrid[lati, loni, subinds] != b'']))
+                        if len(prj) ==1:
+                            cgprjs[lati, loni, i, seasind] =  prj[0]
+                        else:
+                            prjs = b', '.join(prj)
+                            prjs = np.unique(prjs)
+                            cgprjs[lati, loni, i, seasind] = prjs[0]
+            
     #apply thresholds to cgseas
     cgnmons = np.nansum(~np.isnan(cgseas), axis = 2)
     for i in range(cgtcov.shape[0]):
@@ -279,12 +322,11 @@ def getseasonalgrids(np, glats, glons, coarsegrid, pregrid, t):
                 if any(mask):
                     cgtcov[i, j, k] = np.max(np.unique(years)[mask])-np.min(np.unique(years)[mask])
     #note that cgnseas is cgnmons in the rest of the code. 
-    return cgseas, cgpre, pretot, cgnmons, cgtcov, years, mons
+    return cgseas, cgpre, pretot, cgnmons, cgtcov, years, mons, cgtmp, cgprjs
 
-def makeDataframe(os, np, pd, nc4, glons, glats, regresults, pretot, ncfiles):
+def makeDataframe(glons, glats, regresults, pretot, ncfiles):
     #locations of things
-
-    
+  
     pres = nc4.Dataset(os.path.join(ncfiles, "regrid_Pres_surf_1960_2014.nc"))
     nclons = pres.variables['lon'][:]
     nclats = pres.variables['lat'][:]
@@ -292,60 +334,39 @@ def makeDataframe(os, np, pd, nc4, glons, glats, regresults, pretot, ncfiles):
     
     columns = ['Lat', 'Lon', 'Season', 'Slope', 'Slope_std', 'Maritime', 'Clim', 'Press', 
            'Omega', 'Omega_std', 'Press_beta', 'Press_std', 'T', 'T_std', 'P']
-
-    x, y = np.meshgrid(glons, glats)
-    summergrid = np.zeros(x.shape)
-    summergrid.fill(7)
-    wintergrid = np.zeros(x.shape)
-    wintergrid.fill(1)
-    seasongrid = np.concatenate((summergrid[:, :, None], wintergrid[:, :, None]), axis = 2)[~np.isnan(regresults[:, :, 2, :])]
     
-    change = regresults[:, :, 2, :][~np.isnan(regresults[:, :, 2, :])]
-    precip = np.nanmean(pretot, axis = 2)
-    precipavg = precip[~np.isnan(regresults[:, :, 2, :])]
-    #change_icam = icsregresults[:, :, 2, :][~np.isnan(regresults[:, :, 2, :])]
-    latlist = np.concatenate((y[:, :, None], y[:, :, None]), axis = 2)[~np.isnan(regresults[:, :, 2, :])]
-    lonlist = np.concatenate((x[:, :, None], x[:, :, None]), axis = 2)[~np.isnan(regresults[:, :, 2, :])]
-    
+    inds = np.where(~np.isnan(regresults[:, :, 2, :]))
     df = pd.DataFrame(columns = columns)
-    df['Lat'] = latlist
-    df['Lon'] = lonlist
-    df['Slope'] = change
-    df['Slope_std'] = regresults[:, :, 3, :][~np.isnan(regresults[:, :, 2, :])]
-    df['P'] = precipavg
-    #df['Slope_iCAM'] = change_icam
-    df['Season'] = np.where(seasongrid == 1, 'DJF', 'JJA')
-    
-    #get netcdf data -  regridded with iris in RegridReanalysis      
+    precip = np.nanmean(pretot, axis = 2)
     os.chdir(ncfiles)
-    omegareg = np.load("omegareg.npy")
-    presreg = np.load("presreg.npy")
+    omegareg = np.load("omegareg_re.npy")
+    presreg = np.load("presreg_re.npy")
     treg = np.load("treg.npy")
-
-    #will need to add 360 to all negative Lons...
-    for i in range(len(df)):    
-        lonval = df.loc[i, 'Lon']
-        if df.loc[i, 'Lon'] < 0:
-            lonval = lonval+360
-        loni = np.where(lonval == nclons)[0][0]
-        lati = np.where(df.loc[i, 'Lat'] == nclats)[0][0]
-        
-        if df.loc[i, 'Season'] == 'DJF':
-            df.loc[i, 'Press'] = presreg[lati, loni, 2, 1]
-            df.loc[i, 'Press_std'] = presreg[lati, loni, 3, 1]
-            df.loc[i, 'Press_std'] = presreg[lati, loni, 3, 1]
-            df.loc[i, 'Omega'] = omegareg[lati, loni, 2, 1]
-            df.loc[i, 'Omega_std'] = omegareg[lati, loni, 3, 1]     
-            df.loc[i, 'T'] = treg[lati, loni, 2, 1]
-            df.loc[i, 'T_std'] = treg[lati, loni, 3, 1]
-        elif df.loc[i, 'Season'] == 'JJA':
-            df.loc[i, 'Press'] = presreg[lati, loni, 2, 0]
-            df.loc[i, 'Press_std'] = presreg[lati, loni, 3, 0]
-            df.loc[i, 'Omega'] = omegareg[lati, loni, 2, 0]
-            df.loc[i, 'Omega_std'] = omegareg[lati, loni, 3, 0]
-            df.loc[i, 'T'] = treg[lati, loni, 2, 0]
-            df.loc[i, 'T_std'] = treg[lati, loni, 3, 0]
+    
+    for row, i, j, k in zip(range(len(inds[0])), inds[0], inds[1], inds[2]):
+        df.loc[row, 'Lat'] = glats[i]
+        df.loc[row, 'Lon'] = glons[j]
+        if k == 0:
+            df.loc[row, 'Season'] = 'DJF'
+        else:
+            df.loc[row, 'Season'] = 'JJA'
             
+        df.loc[row, 'Slope'] = regresults[i, j, 2, k]
+        df.loc[row, 'Slope_std'] = regresults[i, j, 3, k]
+        df.loc[row, 'P'] = precip[i, j, k]
+        
+        if glons[j] < 0:
+            lonval = glons[j]+360
+        loni = np.where(lonval == nclons)[0][0]
+        lati = np.where(glats[i] == nclats)[0][0]    
+        
+        df.loc[row, 'Press'] = presreg[i, j, 2, k]
+        df.loc[row, 'Press_std'] = presreg[i, j, 3, k]
+        df.loc[row, 'Omega'] = omegareg[i, j, 2, k]
+        df.loc[row, 'Omega_std'] = omegareg[i, j, 3, k] 
+        df.loc[row, 'T'] = treg[lati, loni, 2, k]
+        df.loc[row, 'T_std'] = treg[lati, loni, 3, k]
+        
     #koppen classification key:
     #http://koeppen-geiger.vu-wien.ac.at/shifts.htm
     #Main Climates:
@@ -395,7 +416,7 @@ def makeDataframe(os, np, pd, nc4, glons, glats, regresults, pretot, ncfiles):
             
     return df
 
-def getGeopotentialHeight(os, np, dt, nc4, ncfiles):
+def getGeopotentialHeight(ncfiles):
     #this only gets winter values
     f = nc4.Dataset(os.path.join(ncfiles, 'hgt500mon.nc'), 'r', format = 'NETCDF4')
     timedel = f['time'][:]
@@ -415,7 +436,7 @@ def getGeopotentialHeight(os, np, dt, nc4, ncfiles):
         hgts[i, :, :] = np.average(hgt[[ind, ind+1, ind+2], :, :], axis = 0)
     return hgts, hgtlat, hgtlon
 
-def getTeleIndex(os, pd, np, teleloc, telename):
+def getTeleIndex(teleloc, telename):
     INDEX = pd.read_csv(os.path.join(teleloc, telename), sep = ' ', header = 0)
     INDEX = INDEX[(INDEX.loc[:, 'Year'] >=1959)&(INDEX.loc[:, 'Year'] <=2016)].reset_index()
     end = len(INDEX)-2

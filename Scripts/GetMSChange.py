@@ -4,8 +4,10 @@ Created on Thu Aug 22 11:09:33 2019
 
 @author: u0929173
 """
+import numpy as np
+import statsmodels.api as sm
 
-def GetMultidecadalChange(np, sm, glats, glons, years, cgseas, cgtcov, cgnmons):   
+def GetMultidecadalChange(glats, glons, years, cgseas, cgtcov, cgnmons):   
     regresults = np.zeros((len(glats), len(glons), 6, 2))
     regresults.fill(np.nan)
     
@@ -30,7 +32,7 @@ def GetMultidecadalChange(np, sm, glats, glons, years, cgseas, cgtcov, cgnmons):
                     
     return regresults
 
-def getCAMChange(np, sm, icyears, years, Lats, Lons, grids, cgnmons, cgtcov, thresh):
+def getCAMChange(icyears, years, Lats, Lons, grids, cgnmons, cgtcov, thresh):
     #get the regression based on same times/locations as data. Use data as a mask.
     startind = np.where(np.unique(icyears) == 1960)[0][0]
     yearend = np.where(np.unique(years) == np.max(np.unique(icyears[startind:])))[0][0]+1   

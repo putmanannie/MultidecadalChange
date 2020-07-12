@@ -4,21 +4,10 @@ Script that does all processing, analysis, makes figures, and produces statistic
 for the paper. 
 """
 import os
-import statsmodels.api as sm
-import scipy as sp
 import numpy as np
-import netCDF4 as nc4
-import copy
-import csv
-import matplotlib as mpl
-import pandas as pd
-import matplotlib.patches as patches
-import cartopy.crs as ccrs
-import cartopy as ctp
-import datetime as dt
-import urllib
+import importlib
 
-rootdir = """C:\Users\u0929173\Documents\Python\WaterIsotopeAnalysis_012016\GeospatialInterpolation\Manuscript"""
+rootdir = """E:\WorkComputer\Documents\Documents\Python\WaterIsotopeAnalysis_012016\GeospatialInterpolation\Manuscript_Clean"""
 os.chdir(os.path.join(rootdir, 'Scripts'))
 #this is the set of functions for getting iCAM and measurement data
 import GetMSData as GetData
@@ -39,111 +28,99 @@ aggplots = os.path.join(rootdir, 'Figs')
 ncfiles = os.path.join(rootdir, 'Data')
 teleloc = os.path.join(rootdir, 'Data')
 prefileindir = os.path.join(rootdir, 'Data\Reanalysis')
-CAMdir = r"""W:\iCAM\forAnnie"""  #this is big so needs to be held elsewhere
+CAMdir = r"""E:\WorkComputer\WDrive\iCAM\forAnnie"""  #this is big so needs to be held elsewhere (now it can potentially be in Data)
 getregrid = False
 #%% ######## GET AND PROCESS DATA (MODEL AND MEASUREMENT) ##################
 
 #Get and process model data (3 ensemble members)
 (Lons, Lats, icyears, d18O, Pre, Tmp, PW, grids, 
-     pregrids, tmpgrids, pwgrids) = ProcessData.processCAM(os, np, nc4, copy, GetData, CAMdir)
+     pregrids, tmpgrids, pwgrids) = ProcessData.processCAM(GetData, CAMdir)
 
 #Get and process measurement data
 (glats, glons, cgseas, cgpre, pretot, cgnmons, 
-     cgtcov, years, mons) = ProcessData.processData(os, np, nc4, csv, copy, GetData, ncfiles)
+     cgtcov, years, mons, cgtmp, cgprjs) = ProcessData.processData(GetData, ncfiles)
 
 startind = np.where(np.unique(icyears) == np.min(years))[0][0]
 endind = np.where(np.unique(years) == np.max(icyears))[0][0]+1
 gridsub = np.where(np.isnan(cgseas[:, :, :endind, :]), cgseas[:, :, :endind, :], grids[:, :, startind:, :])
-MODSUBSurfEst, MODSUBSurfEstSE = EstimateRT.getSurfEst(np, gridsub)
+MODSUBSurfEst, MODSUBSurfEstSE = EstimateRT.getSurfEst(gridsub)
 #use the same time frame
-MODSurfEst, MODSurfEstSE = EstimateRT.getSurfEst(np, grids[:, :, startind:, :])
+MODSurfEst, MODSurfEstSE = EstimateRT.getSurfEst(grids[:, :, startind:, :])
 #%% ######### RESIDENCE TIME ESTIMATE OF D18O TIMESERIES (MODEL AND MEASUREMENT) ################
 
 #estimate residence time d18O timeseries from model data
-d18O_ts, yearrange = EstimateRT.EstModRT(np, copy, icyears, grids, pregrids, pwgrids)
+d18O_ts, Dd18O_ts, yearrange = EstimateRT.EstModRT(icyears, grids, pregrids, pwgrids)
 
 #estimate residence time for measurement from daily scale reanalysis data
-SurfEst, SurfEstSE = EstimateRT.getSurfEst(np, cgseas)
+SurfEst, SurfEstSE = EstimateRT.getSurfEst(cgseas)
 if getregrid:
-    EstimateRT.GetRTData(os, np, dt, urllib, prefileindir)
-    EstimateRT.regridRTdata(iris, np, os)
+    EstimateRT.GetRTData(prefileindir)
+    EstimateRT.regridRTdata()
 #this is returning a lot of nans... something is wrong
-Tseas, d18O_est = EstimateRT.getMeasRT(os, np, nc4, copy, SurfEst, SurfEstSE, prefileindir, ncfiles)
-cgseasRT = np.swapaxes(np.swapaxes(d18O_est, 2, 0), 3, 1)
+Tseas, d18O_est, Dd18O_est = EstimateRT.getMeasRT(SurfEst, SurfEstSE, prefileindir, ncfiles)
+cgseasRT = np.swapaxes(np.swapaxes(Dd18O_est, 2, 0), 3, 1)
 
 #%% ############# DO REGRESSIONS OF MODEL, DATA, AND RESIDENCE TIME TIMESERIES ########
 #These should come out in per mil per decade
 #data
-regresults = GetChange.GetMultidecadalChange(np, sm, glats, 
-                                             glons, years, cgseas, 
+regresults = GetChange.GetMultidecadalChange(glats, glons, years, cgseas,                                              
                                              cgtcov, cgnmons)
 #model d18O
-MODregresults = GetChange.getCAMChange(np, sm, icyears, years, Lats, 
+MODregresults = GetChange.getCAMChange(icyears, years, Lats, 
                              Lons, grids, cgnmons, cgtcov, [0, 0])
 #subset
-MODSUBregresults = GetChange.GetMultidecadalChange(np, sm, glats, 
+MODSUBregresults = GetChange.GetMultidecadalChange(glats, 
                                              glons, years[years <= np.max(icyears)],  
                                              gridsub, cgtcov, cgnmons)
 
 #model residence time
-RTMODregresults = GetChange.getCAMChange(np, sm, yearrange, years, Lats, Lons, 
-                                         d18O_ts, cgtcov, cgnmons, [0,0])
+RTMODregresults = GetChange.getCAMChange(yearrange, years, Lats, Lons, 
+                                         Dd18O_ts, cgtcov, cgnmons, [0,0])
 
 #reanalysis residence time
-RTregresults = GetChange.GetMultidecadalChange(np, sm, glats, 
-                                             glons, years, cgseasRT, 
+RTregresults = GetChange.GetMultidecadalChange(glats, glons, years, cgseasRT,                                              
                                              cgtcov, cgnmons)
 #summarize comparison of residence time estimate and model or measurement slope estimate
-GetStats.summary(np, RTregresults, regresults)
-GetStats.summary(np, RTMODregresults, MODregresults)
-GetStats.regNums(np, regresults)
-GetStats.dataNums(np, regresults, cgnmons)
-GetStats.regressSlopes(np, sm, regresults, MODSUBregresults)
+latareas, totalarea = GetStats.areaPerGridCell(glats, glons)
+GetStats.summary(-RTregresults, regresults, latareas, totalarea)
+GetStats.summary(-RTMODregresults, MODregresults, latareas, totalarea)
+GetStats.regNums(regresults)
+GetStats.dataNums(regresults, cgnmons)
+GetStats.regressSlopes(regresults, MODSUBregresults)
 #%%
-semidata = ProcessData.getSemivariograms(os, np, mpl, sp, pd, copy, ProcessData.distance, 
-                                         ProcessData.fitSemiVariogram, regresults, 
-                                         MODregresults, MODSUBregresults, SurfEst,  
-                                         MODSurfEst, MODSUBSurfEst, glats, glons)
+semidata = ProcessData.getSemivariograms(regresults, MODregresults, MODSUBregresults,   
+                                         SurfEst, MODSurfEst, MODSUBSurfEst, 
+                                         glats, glons)
 #%% prepare the dataframe for making a figure or two below
-df = GetData.makeDataframe(os, np, pd, nc4, glons, glats, regresults, pretot, ncfiles)
-GetStats.MaritimeSummary(np, sm, df)
+df = GetData.makeDataframe(glons, glats, regresults, pretot, ncfiles)
+GetStats.MaritimeSummary(df)
 
 #%% get geopotential height dataset and create stacks
-hgts, hgtlat, hgtlon = GetData.getGeopotentialHeight(os, np, dt, nc4, ncfiles)
-PNA_DJF = GetData.getTeleIndex(os, pd, np, teleloc, 'PNA.txt')
-NAO_DJF = GetData.getTeleIndex(os, pd, np, teleloc, 'NAO.txt')
-#the areas to make stacks for , N. Am. Northwest, Southeast and Central Europe
-NWarea = np.array([[42.5, 57.5], [-125, -95]])
-SEarea = np.array([[32.5, 52.5], [-95, -60]])
-Eur = np.array([[47.5, 57.5], [5, 20]])
-stacksNW, stacksNW_std = ProcessData.makeStacks(np, NWarea, glons, glats, cgnmons, 
+hgts, hgtlat, hgtlon = GetData.getGeopotentialHeight(ncfiles)
+
+#the areas to make stacks for , N. Am. Northwest and Central Europe
+stacksNW, stacksNW_std = ProcessData.makeStacks(np.array([[42.5, 57.5], [-125, -95]]), glons, glats, cgnmons, 
                                                 cgtcov, cgseas)
-stacksSE, stacksSE_std = ProcessData.makeStacks(np, SEarea, glons, glats, cgnmons, 
-                                                cgtcov, cgseas)
-stacksEur, stacksEur_std = ProcessData.makeStacks(np, Eur, glons, glats, cgnmons, 
+stacksEur, stacksEur_std = ProcessData.makeStacks(np.array([[47.5, 57.5], [5, 20]]), glons, glats, cgnmons, 
                                                   cgtcov, cgseas)
 
-#%%
-#figure 1: the change map
-MakeFigures.changemap(os, mpl, np, patches, ctp, ccrs, glons, glats, 
-                   regresults, cgseas, cgtcov, cgnmons, years, aggplots)
-#figure 2 or Figure S1, the places where model change matches residence time changes
-#this is now the slope of d18O estimate based on residence time changes (slope/slope comparisons)
-MakeFigures.PlotModRT(os, np, mpl, ctp, ccrs, aggplots, Lons, Lats,  
-                     RTMODregresults[:, :, 2, :], MODregresults[:, :, 2, :])
-#Figure 2, stacked bar plot
-MakeFigures.StackedBar(os, np, mpl, patches, df, aggplots)
+#%% Make figures for manuscript
 
-#Figure of semivariogram lag distances
-MakeFigures.MakeSemivariogramFig(os, np, mpl, semidata, aggplots)
+#figure 1: the trends map 
+MakeFigures.changemap(glons, glats, regresults, cgseas, cgtcov, cgnmons, 
+                      years, aggplots)
+
+#figure 2: North America and Europe plot
+MakeFigures.stackCompositeFig(hgts, hgtlat, hgtlon, years, stacksNW, stacksNW_std, stacksEur, 
+                      stacksEur_std, aggplots)
+
 
 #Figure 3, two panel plot of pressure/omega slope/intercept
-MakeFigures.maritime(os, sm, mpl, df, aggplots)
+MakeFigures.maritime(df, aggplots)
 
-#make geopotential height figures
-MakeFigures.MakeGeopotentialRegress(os, np, mpl, ctp, ccrs, stacksNW, hgts, 
-                                    hgtlat, hgtlon, 'NW', '500', aggplots)
-MakeFigures.MakeGeopotentialRegress(os, np, mpl, ctp, ccrs, stacksEur, hgts, 
-                                    hgtlat, hgtlon, 'Eur', '500', aggplots)
-MakeFigures.MakeStackFig(os, np, mpl, years, stacksNW, stacksNW_std, stacksSE, 
-                         stacksSE_std, PNA_DJF, aggplots)
+
+#figure 4, the places where model change matches residence time changes
+#this is now the slope of d18O estimate based on residence time changes (slope/slope comparisons)
+MakeFigures.PlotModRT(aggplots, Lons, Lats,  
+                     -RTMODregresults[:, :, 2, :], MODregresults[:, :, 2, :])
+

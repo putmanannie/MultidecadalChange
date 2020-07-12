@@ -4,13 +4,21 @@ Created on Thu Aug 22 12:08:25 2019
 
 @author: u0929173
 """
+import numpy as np
+import copy
+import datetime as dt
+import urllib
+import os
+#import iris
+import netCDF4 as nc4
 
-def EstModRT(np, copy, icyears, grids, pregrids, pwgrids):
+def EstModRT(icyears, grids, pregrids, pwgrids):
     #these are the long term values bookending the period of reference.
     startyr = 1960
     endyr = 2015
     yearrange = np.arange(startyr, endyr)
     d18O_ts = np.zeros((grids.shape[0], grids.shape[1], len(yearrange), 2))
+    Dd18O_ts = np.zeros((grids.shape[0], grids.shape[1], len(yearrange), 2))
     
     #get the long term avg values
     sind = np.argmin(abs(np.unique(icyears)-startyr))
@@ -24,9 +32,10 @@ def EstModRT(np, copy, icyears, grids, pregrids, pwgrids):
         Qanom = np.divide(np.subtract(pwgrids[:, :, subind, :], pwmean), pwmean)
         Panom = np.divide(np.subtract(pregrids[:, :, subind, :], premean), premean)
         d18O_ts[:, :, i, :] = np.add(np.multiply(-0.4*np.subtract(Qanom, Panom), gridmean), gridmean)
-    return d18O_ts, yearrange
+        Dd18O_ts[:, :, i, :] = -0.4*np.subtract(Qanom, Panom)
+    return d18O_ts, Dd18O_ts, yearrange
 
-def GetRTData(os, np, dt, urllib, prefileindir):
+def GetRTData(prefileindir):
     #get the data if it needs to be gotten, probs wont after this time
     getncfiles = False
     
@@ -52,8 +61,9 @@ def GetRTData(os, np, dt, urllib, prefileindir):
                 urllib.urlretrieve("""ftp://ftp.cdc.noaa.gov/Datasets/ncep.reanalysis.dailyavgs/surface/{}""".format(tpfn),
                                    os.path.join(prefileindir, tpfn))
                 urllib.urlcleanup()
-                
-def regridRTdata(iris, np, os):
+ 
+#needs iris to be imported but iris is giving issues with this version of python               
+def regridRTdata():
     prefiledir = """W:\Annie\Reanalysis"""
     regridfiledir = """W:\Annie\Reanalysis\Regridded"""
     prefileindir = np.sort(os.listdir(prefiledir))
@@ -85,16 +95,16 @@ def regridRTdata(iris, np, os):
         regridded_cube = cube.regrid(basegrid, scheme) 
         iris.save(regridded_cube, os.path.join(regridfiledir, 'regrid_{}'.format(f)))
 
-def getSurfEst(np, cgseas):
+def getSurfEst(cgseas):
     SurfEst = np.nanmean(cgseas, axis = 2)
     sqrt_nyrs = np.sqrt(np.sum(~np.isnan(cgseas), axis = 2))
     sqrt_nyrs = np.where(sqrt_nyrs == 0, np.nan, sqrt_nyrs)
     SurfEstSE = np.divide(np.nanstd(cgseas, axis = 2), sqrt_nyrs)
     return SurfEst, SurfEstSE
 
-def getMeasRT(os, np, nc4, copy, SurfEst, SurfEstSE, prefileindir, ncfiles): 
+def getMeasRT(SurfEst, SurfEstSE, prefileindir, ncfiles): 
     #indices corresponding to july and january.
-    monind = [6, 0]
+    monind = [0, 6]
     startyr = 1960
     endyr = 2016
     yearrange = np.arange(startyr, endyr+1)
@@ -176,6 +186,7 @@ def getMeasRT(os, np, nc4, copy, SurfEst, SurfEstSE, prefileindir, ncfiles):
     Tmean = np.ma.mean(Tseas, axis = 0)    
       
     d18O_est = np.zeros((len(yearrange), 2, len(lat), len(lon)))
+    Dd18O_est = np.zeros((len(yearrange), 2, len(lat), len(lon)))
     for i in (yearrange-yearrange[0]):
             #using subtract and divide with a masked array keeps the mask
             DQ = np.divide(np.subtract(Qseas[i], Qmean), Qmean)
@@ -185,6 +196,7 @@ def getMeasRT(os, np, nc4, copy, SurfEst, SurfEstSE, prefileindir, ncfiles):
             RT  = np.divide(Qseas[i], Pseas[i]*3600*24)
     
             Dd18O = -0.4*DRT
+            Dd18O_est[i, :, :] = Dd18O
             swapSurf = np.swapaxes(np.swapaxes(SurfEst, 2, 0), 2, 1)
             #propagate the standard error of the mean also
             d18O_est[i, :, :] = np.add(np.multiply(Dd18O, swapSurf), swapSurf)
@@ -203,8 +215,17 @@ def getMeasRT(os, np, nc4, copy, SurfEst, SurfEstSE, prefileindir, ncfiles):
     d18OEST = f.createVariable('d18Oest', 'f', ('times', 'seasons', 'lat', 'lon'))
     d18OEST[:] = d18O_est
     
+    Dd18OEST = f.createVariable('Dd18Oest', 'f', ('times', 'seasons', 'lat', 'lon'))
+    Dd18OEST[:] = Dd18O_est
+    
     f.close()
     
+    return Tseas, d18O_est, Dd18O_est
+
+def loadMeasRT(dataloc):
+    f = nc4.Dataset(os.path.join('RTmodel_d18O.nc'), 'r', format = 'NETCDF4')
+    Tseas = f.variables['tmp'][:]
+    d18O_est = f.variables['d18Oest'][:]
     return Tseas, d18O_est
 
 

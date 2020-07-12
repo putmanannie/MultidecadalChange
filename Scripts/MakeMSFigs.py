@@ -4,11 +4,19 @@ Created on Thu Aug 22 11:03:38 2019
 
 @author: u0929173
 """
+import numpy as np
+import matplotlib as mpl
+import os
+import cartopy as ctp
+import matplotlib.patches as patches
+import cartopy.crs as ccrs
+from scipy.stats import norm
+from matplotlib.lines import Line2D
+from matplotlib.gridspec import GridSpec
 
-def changemap(os, mpl, np, patches, ctp, ccrs, glons, glats, 
-                   regresults, cgseas, cgtcov, cgnmons, years, aggplots):
+def changemap(glons, glats, regresults, cgseas, cgtcov, cgnmons, years, aggplots):
     RdBu = mpl.pyplot.get_cmap('RdBu_r')
-    seasnames = ['JJA', 'DJF']
+    seasnames = {'JJA':(1, 0), 'DJF':(0, 1)}
     os.chdir(aggplots)  
     
     fig = mpl.pyplot.figure(figsize = (9, 7))
@@ -18,7 +26,9 @@ def changemap(os, mpl, np, patches, ctp, ccrs, glons, glats,
     Lon_e = np.arange(-180, 185, 5)
     Lat_e = np.arange(-90, 95, 5)
     x, y = np.meshgrid(Lon_e, Lat_e)  
-    for (ax, sn, k) in zip(axes, seasnames, range(len(axes))):
+    for sn in seasnames.keys():
+        ax = axes[seasnames[sn][1]]
+        k = seasnames[sn][0]
         #make a plot of all grids and where there is data
         ax.add_feature(ctp.feature.OCEAN, zorder=0, facecolor = '#C2DBE5')
         ax.add_feature(ctp.feature.LAND, zorder=0, edgecolor='dimgray', linewidth = 0.35, facecolor = 'gray')
@@ -29,12 +39,19 @@ def changemap(os, mpl, np, patches, ctp, ccrs, glons, glats,
         for j in range(len(glats)):
             ax.plot(x[j, :], y[j, :], color = 'dimgray', linewidth = 0.1,
                     zorder = 10, transform = ccrs.PlateCarree())
-        vals = np.ma.array(regresults[:, :, 2, k], mask = np.isnan(regresults[:, :, 2, k]))
+            
+        mask = ~np.isnan(regresults[:, :, 4, k])&(regresults[:, :, 4, k] <= 0.1)
+        vals = np.ma.array(regresults[:, :, 2, k], mask = mask)
         p = ax.pcolor(x, y, vals, cmap = RdBu, vmin = -1.0, vmax = 1.0, 
-                      edgecolors = 'k', linewidths = 0.5, transform = ccrs.PlateCarree())
+                      edgecolors = 'dimgray', linewidths = 0.5, transform = ccrs.PlateCarree())
+        mask = ~np.isnan(regresults[:, :, 4, k])&(regresults[:, :, 4, k] > 0.1)
+        vals = np.ma.array(regresults[:, :, 2, k], mask = mask)
+        p = ax.pcolor(x, y, vals, cmap = RdBu, vmin = -1.0, vmax = 1.0, 
+                      edgecolors = 'k', linewidths = 0.8, transform = ccrs.PlateCarree())
+        
 
-    axes[0].annotate('(a) '+seasnames[0], xy = (0.02, 0.94), xytext = (0.05, 0.95), xycoords = 'axes fraction')
-    axes[1].annotate('(b) '+seasnames[1], xy = (0.02, 0.94), xytext = (0.05, 0.95), xycoords = 'axes fraction')
+    axes[0].annotate('(a) JJA', xy = (0.02, 0.94), xytext = (0.05, 0.95), xycoords = 'axes fraction')
+    axes[1].annotate('(b) DJF', xy = (0.02, 0.94), xytext = (0.05, 0.95), xycoords = 'axes fraction')
     fig.subplots_adjust(right=0.92)
     cbar_ax = fig.add_axes([0.85, 0.15, 0.03, 0.7])
     cb = fig.colorbar(p, cax=cbar_ax)
@@ -43,7 +60,7 @@ def changemap(os, mpl, np, patches, ctp, ccrs, glons, glats,
     mpl.pyplot.savefig('Fig1.png', dpi = 300)  
     mpl.pyplot.close()  
     
-def PlotModRT(os, np, mpl, ctp, ccrs, aggplots, Lons, Lats, RTslope, MODslope):
+def PlotModRT(aggplots, Lons, Lats, RTslope, MODslope):
     RdBu = mpl.pyplot.get_cmap('RdBu_r')
     Lon_e = np.arange(-180, 185, 5)
     Lat_e = np.arange(-90, 95, 5)
@@ -56,7 +73,7 @@ def PlotModRT(os, np, mpl, ctp, ccrs, aggplots, Lons, Lats, RTslope, MODslope):
     ax1 = mpl.pyplot.subplot(2, 1, 1, projection=ccrs.Robinson(central_longitude = 0))
     ax2 = mpl.pyplot.subplot(2, 1, 2, projection=ccrs.Robinson(central_longitude = 0))
     axes = np.array([ax1, ax2])
-    for (ax, k) in zip(axes, range(len(axes))):
+    for (ax, k) in zip(axes, [1, 0]):
         #make a plot of all grids and where there is data
         ax.add_feature(ctp.feature.COASTLINE, zorder=10)
  
@@ -73,171 +90,27 @@ def PlotModRT(os, np, mpl, ctp, ccrs, aggplots, Lons, Lats, RTslope, MODslope):
     #cb = mpl.pyplot.colorbar(p, orientation = 'horizontal', cax = ax)
     cb.set_label('$\delta^{18}O$ slope ('+u'\u2030'+' decade $^{-1}$)')
     
-    mpl.pyplot.savefig(os.path.join(aggplots, 'FigS1.png'), dpi = 500)
+    mpl.pyplot.savefig(os.path.join(aggplots, 'Fig4.png'), dpi = 500)
     
-def StackedBar(os, np, mpl, patches, df, figloc):
-    df['sig'] = np.multiply(np.add(df['Slope'], df['Slope_std']),np.add(df['Slope'], -df['Slope_std'])) > 0
-
-    df['Colors'] = np.where(df['Maritime'].values == 1, '#35978f', '#bf812d')
-      #change color of significant sites
-    df['Colors'] = np.where((df['Colors'] == '#35978f')&(df['sig']), '#01665e', df['Colors'])
-    df['Colors'] = np.where((df['Colors'] == '#bf812d')&(df['sig']), '#8c510a', df['Colors'])
-    
-    latbins = np.array([-66, -43, -23, 0, 23, 43, 66])
-    #for plotting
-    latctrs_c = np.array([-52, -29, -8, 16, 36, 59])
-    latctrs_m = np.array([-59, -36, -16, 8, 29, 52])
-    fig, axes = mpl.pyplot.subplots(nrows = 2, ncols = 1, sharex = True, figsize = (7, 5.5))
-    default = 0.01
-    width = 5
-    edgecolors = ['dimgray', 'black']
-    for axcts in range(2):
-        if axcts == 0:
-            key = 'JJA'
-        else:
-            key = 'DJF'
-        for i in range(len(latctrs_c)):
-            latbininds = df.index[(df['Lat'].values >= latbins[i]) & (df['Lat'].values <= latbins[i+1])]
-            for j in range(2):
-                subinds = latbininds[(df['Maritime'][latbininds] == 0)&(df['Season'][latbininds] == key)&(df['sig'][latbininds] == bool(j))]
-                subinds_n = subinds[df['Slope'][subinds] < 0]
-                subinds_p = subinds[df['Slope'][subinds] > 0]
-                if len(subinds_n) > 0:
-                    if len(subinds_n) > 1:
-                        position = latctrs_c[i]
-                        llc = (min(df['Slope'][subinds_n].values), position)
-                        hgt = max(df['Slope'][subinds_n].values) - min(df['Slope'][subinds_n].values)
-                        if hgt < default:
-                                hgt = default
-                        color = np.unique(df['Colors'][subinds_n].values)[0]
-                        pat = patches.Rectangle(xy = llc, width = hgt, height = width, 
-                                fill = True, facecolor = color, edgecolor = edgecolors[j], zorder = j)
-                        axes[axcts].add_patch(pat) 
-                    else:
-                        axes[axcts].errorbar(df.loc[subinds_n, 'Slope'], latctrs_c[i]+(width/2), 
-                            xerr = df.loc[subinds_n, 'Slope_std'], fmt = 'o', ecolor = edgecolors[j], 
-                            zorder = 0)
-                        axes[axcts].scatter(df.loc[subinds_n, 'Slope'], latctrs_c[i]+(width/2), 
-                            c = df.loc[subinds_n, 'Colors'], s = 40, edgecolor = edgecolors[j], zorder = 3)
-                if len(subinds_p) > 0:
-                    if len(subinds_p) > 1:
-                        position = latctrs_c[i]
-                        llc = (min(df['Slope'][subinds_p].values), position)
-                        hgt = max(df['Slope'][subinds_p].values) - min(df['Slope'][subinds_p].values)
-                        if hgt < default:
-                                hgt = default
-                        color = np.unique(df['Colors'][subinds_p].values)[0]
-                        pat = patches.Rectangle(xy = llc, width = hgt, height = width, 
-                                fill = True, facecolor = color, edgecolor = edgecolors[j], zorder = j)
-                        axes[axcts].add_patch(pat) 
-                    else:
-                        axes[axcts].errorbar(df.loc[subinds_p, 'Slope'], latctrs_c[i]+(width/2), 
-                            xerr = df.loc[subinds_p, 'Slope_std'], fmt = 'o', ecolor = edgecolors[j], 
-                            zorder = 0)
-                        axes[axcts].scatter(df.loc[subinds_p, 'Slope'], latctrs_c[i]+(width/2), 
-                            c = df.loc[subinds_p, 'Colors'], s = 40, edgecolor = edgecolors[j], zorder = 3)
-    
-    
-                subinds = latbininds[(df['Maritime'][latbininds] == 1)&(df['Season'][latbininds] == key)&(df['sig'][latbininds] == bool(j))]
-                subinds_n = subinds[df['Slope'][subinds] < 0]
-                subinds_p = subinds[df['Slope'][subinds] > 0]
-                if len(subinds_n) > 0:
-                    if len(subinds_n) > 1:
-                        position = latctrs_m[i]
-                        llc = (min(df['Slope'][subinds_n].values), position)
-                        hgt = max(df['Slope'][subinds_n].values) - min(df['Slope'][subinds_n].values)
-                        if hgt < default:
-                                hgt = default
-                        color = np.unique(df['Colors'][subinds_n].values)[0]
-                        pat = patches.Rectangle(xy = llc, width = hgt, height = width, 
-                                fill = True, facecolor = color, edgecolor = edgecolors[j], zorder = j)
-                        axes[axcts].add_patch(pat) 
-                    else:
-                        axes[axcts].errorbar(df.loc[subinds_n, 'Slope'], latctrs_m[i]+(width/2), 
-                            xerr = df.loc[subinds_n, 'Slope_std'], fmt = 'o', ecolor = edgecolors[j], 
-                            zorder = 0)
-                        axes[axcts].scatter(df.loc[subinds_n, 'Slope'], latctrs_m[i]+(width/2), 
-                            c = df.loc[subinds_n, 'Colors'], s = 40, edgecolor = edgecolors[j], zorder = 3)
-                if len(subinds_p) > 0:
-                    if len(subinds_p) > 1:
-                        position = latctrs_m[i]
-                        llc = (min(df['Slope'][subinds_p].values), position)
-                        hgt = max(df['Slope'][subinds_p].values) - min(df['Slope'][subinds_p].values)
-                        if hgt < default:
-                                hgt = default
-                        color = np.unique(df['Colors'][subinds_p].values)[0]
-                        pat = patches.Rectangle(xy = llc, width = hgt, height = width, 
-                                fill = True, facecolor = color, edgecolor = edgecolors[j], zorder = j)
-                        axes[axcts].add_patch(pat)  
-                    else:
-                        axes[axcts].errorbar(df.loc[subinds_p, 'Slope'], latctrs_m[i]+(width/2), 
-                            xerr = df.loc[subinds_p, 'Slope_std'], fmt = '.', ecolor = edgecolors[j], 
-                            zorder = 0)
-                        axes[axcts].scatter(df.loc[subinds_p, 'Slope'], latctrs_m[i]+(width/2), 
-                            c = df.loc[subinds_p, 'Colors'], s = 40, edgecolor = edgecolors[j], zorder = 3)
-                    
-    inds = df.index[(df['Lat'].values >= 66)&(df['Season'] == 'JJA')]
-    axes[0].errorbar(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], 
-                            xerr = df.loc[inds, 'Slope_std'], fmt = '.', ecolor = 'black', 
-                            zorder = 0)
-    axes[0].scatter(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], c = df.loc[inds, 'Colors'], s = 40, edgecolor = 'k')
-    inds = df.index[(df['Lat'].values <= -66)&(df['Season'] == 'JJA')]
-    axes[0].errorbar(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], 
-                            xerr = df.loc[inds, 'Slope_std'], fmt = '.', ecolor = 'black', 
-                            zorder = 0)
-    axes[0].scatter(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], c = df.loc[inds, 'Colors'], s = 40, edgecolor = 'k')
-    
-    inds = df.index[(df['Lat'].values >= 66)&(df['Season'] == 'DJF')]
-    axes[1].errorbar(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], 
-                            xerr = df.loc[inds, 'Slope_std'], fmt = '.', ecolor = 'black', 
-                            zorder = 0)
-    axes[1].scatter(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], c = df.loc[inds, 'Colors'], s = 40, edgecolor = 'k')
-    inds = df.index[(df['Lat'].values <= -66)&(df['Season'] == 'DJF')]
-    axes[1].errorbar(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], 
-                            xerr = df.loc[inds, 'Slope_std'], fmt = '.', ecolor = 'black', 
-                            zorder = 0)
-    axes[1].scatter(df.loc[inds, 'Slope'], df.loc[inds, 'Lat'], c = df.loc[inds, 'Colors'], s = 40, edgecolor = 'k')
-    
-    axes[0].plot([0,0], [-90, 90], linestyle = '--', color = 'silver', linewidth = 1.5, zorder = -2)
-    axes[1].plot([0,0], [-90, 90], linestyle = '--', color = 'silver', linewidth = 1.5, zorder = -2)
-    axes[0].set_xlim([-2, 2])
-    axes[1].set_ylim([-90, 90])
-    axes[0].set_ylim([-90, 90])
-    axes[1].set_xlabel('$\delta^{18}O$ slope ('+u'\u2030'+' decade $^{-1}$)')
-    axes[1].annotate('Latitude', xy = (0.02, 0.5), xytext = (0.04, 0.52), xycoords = 'figure fraction', rotation = 'vertical')
-    axes[0].spines['right'].set_visible(False)
-    axes[1].spines['right'].set_visible(False)
-    axes[0].spines['top'].set_visible(False)
-    axes[1].spines['top'].set_visible(False)
-    axes[0].annotate('(a) JJA', xy = (0.02, 0.95), xytext = (0.03, 0.9), xycoords = 'axes fraction')
-    axes[1].annotate('(b) DJF', xy = (0.02, 0.95), xytext = (0.03, 0.9), xycoords = 'axes fraction')
-    
-    markers = [mpl.pyplot.Line2D([0,0],[0,0], color = col, marker='o', linestyle='') 
-        for col in ['#01665e', '#35978f', '#8c510a', '#bf812d']]
-    axes[0].legend(np.array(markers), np.array(['Maritime: significant', 'Maritime: not significant', 
-        'Continental: significant', 'Continental: not significant']), numpoints=1, loc = 'upper left', 
-            ncol = 2, fontsize = 10, bbox_to_anchor=(0.05, 1.3), frameon = False)
-    mpl.pyplot.savefig(os.path.join(figloc, 'Fig2.png'), dpi = 500)
-
-def maritime(os, sm, mpl, df, figloc):
+def maritime(df, figloc):
     #declare the colormap
     RdGy_r = mpl.pyplot.get_cmap('RdGy_r')
     #get subsets of dataframe
-    maritime = df[(df['Maritime'] == 1)&(abs(df['Lat'])<= 20)]
-    subset = df[(df['Maritime'] == 1)&(abs(df['Lat'])> 25)]
+    maritime = df[(df['Maritime'] == 1)&(abs(df['Lat'])<= 15)]
+    subset = df[(df['Maritime'] == 1)&(abs(df['Lat'])> 35)]
     #index by season
     winterinds = subset[subset['Season'] == 'DJF'].index
     summerinds = subset[subset['Season'] == 'JJA'].index
     
     fig, axes = mpl.pyplot.subplots(figsize = (7, 4), ncols = 2, sharey = True)
     p = axes[0].scatter(subset.loc[winterinds, 'Press'].values*10, subset.loc[winterinds, 'Slope'].values, 
-                       c = subset.loc[winterinds, 'T'].values*10, vmax = 0.5, vmin = -0.5, cmap = RdGy_r, 
+                       c = subset.loc[winterinds, 'Lat'].values, vmax = 90, vmin = -90, cmap = RdGy_r, 
                        edgecolor = 'k', marker = 's')
     axes[0].errorbar(subset.loc[winterinds, 'Press'].values*10, subset.loc[winterinds, 'Slope'].values, 
                        xerr = subset.loc[winterinds, 'Press_std'].values*10, yerr = subset.loc[winterinds, 'Slope_std'].values, 
                        fmt = '.', ecolor = 'silver', zorder = -1)
     p = axes[0].scatter(subset.loc[summerinds, 'Press'].values*10, subset.loc[summerinds, 'Slope'].values, 
-                       c = subset.loc[summerinds, 'T'].values*10, vmax = 0.5, vmin = -0.5, cmap = RdGy_r, 
+                       c = subset.loc[summerinds, 'Lat'].values, vmax = 90, vmin = -90, cmap = RdGy_r, 
                        edgecolor = 'k')
     axes[0].errorbar(subset.loc[summerinds, 'Press'].values*10, subset.loc[summerinds, 'Slope'].values, 
                        xerr = subset.loc[summerinds, 'Press_std'].values*10, yerr = subset.loc[summerinds, 'Slope_std'].values, 
@@ -254,14 +127,14 @@ def maritime(os, sm, mpl, df, figloc):
     summerinds = maritime[maritime['Season'] == 'JJA'].index
     
     p1 = axes[1].scatter(maritime.loc[winterinds, 'Omega']*10, maritime.loc[winterinds, 'Slope'], 
-                       c = maritime.loc[winterinds, 'T']*10, marker = 's',
-                       cmap = RdGy_r, edgecolor = 'k', vmin = -0.5, vmax = 0.5)
+                       c = maritime.loc[winterinds, 'Lat'], marker = 's',
+                       cmap = RdGy_r, edgecolor = 'k', vmin = -90, vmax = 90)
     axes[1].errorbar(maritime.loc[winterinds, 'Omega']*10, maritime.loc[winterinds, 'Slope'], 
                        xerr = maritime.loc[winterinds, 'Omega_std']*10, yerr = maritime.loc[winterinds, 'Slope_std'], 
                        fmt = '.', ecolor = 'silver', zorder = -1)
     p2 = axes[1].scatter(maritime.loc[summerinds, 'Omega']*10, maritime.loc[summerinds, 'Slope'], 
-                       c = maritime.loc[summerinds, 'T']*10, 
-                       cmap = RdGy_r, edgecolor = 'k', vmin = -0.5, vmax = 0.5)
+                       c = maritime.loc[summerinds, 'Lat'], 
+                       cmap = RdGy_r, edgecolor = 'k', vmin = -90, vmax = 90)
     axes[1].errorbar(maritime.loc[summerinds, 'Omega']*10, maritime.loc[summerinds, 'Slope'], 
                        xerr = maritime.loc[summerinds, 'Omega_std']*10, yerr = maritime.loc[summerinds, 'Slope_std'], 
                        fmt = '.', ecolor = 'silver', zorder = -1)
@@ -277,7 +150,7 @@ def maritime(os, sm, mpl, df, figloc):
     
     cbar_ax2 = fig.add_axes([0.25, 0.12, 0.50, 0.03])
     cb = fig.colorbar(p1, cax=cbar_ax2, orientation = 'horizontal')
-    cb.set_label(r'Slope  of T ($^{\circ}$ C decade $^{-1}$)')
+    cb.set_label(r'Latitude $^{\circ}$N')
     
     axes[1].set_xlabel(r'Slope of vertical velocity (Pa s$^{-1}$ decade $^{-1}$)')
     fig.subplots_adjust(top = 0.95, bottom = 0.32, left = 0.12, right = 0.95)
@@ -286,94 +159,86 @@ def maritime(os, sm, mpl, df, figloc):
     
     mpl.pyplot.savefig(os.path.join(figloc, 'Fig3.png'), dpi = 500)
 
-def MakeGeopotentialRegress(os, np, mpl, ctp, ccrs, stack, hgts, hgtlat, hgtlon, stackname, hgtname, figloc):
-    #correlation plot of 500 mbar geopotential height with NW stack- this one is pretty convincing
-    mask = ~np.isnan(stack)
-    corrgrid = np.zeros((hgts.shape[1], hgts.shape[2]))
+def stackCompositeFig(hgts, hgtlat, hgtlon, years, stacksNW, stacksNW_std, stacksEur, 
+                      stacksEur_std, figloc):
+    mask = ~np.isnan(stacksNW)
+    corrgridNW = np.zeros((hgts.shape[1], hgts.shape[2]))
     for i in range(len(hgtlat)):
         for j in range(len(hgtlon)):        
-            corrgrid[i, j] = np.corrcoef(hgts[:, i, j][mask], stack[mask])[0,1]
-    
-    RdGy = mpl.pyplot.get_cmap('RdGy_r')
-    #plot the correlation in N hemisphere -- need significance bands too
-    x,y = np.meshgrid(hgtlon, hgtlat)
-    fig = mpl.pyplot.figure(figsize = (7, 5.5))
-    ax = mpl.pyplot.axes(projection = ccrs.Robinson(central_longitude = -100))
-    ax.add_feature(ctp.feature.COASTLINE, zorder=10, edgecolor='dimgray', linewidth = 0.5)
-    p = ax.pcolormesh(x, y, corrgrid,  vmin = -1, vmax = 1, cmap = RdGy, transform = ccrs.PlateCarree(), alpha = 1)
-    cb = mpl.pyplot.colorbar(p)  
-    cb.set_label('Correlation coefficient') 
-    ax.set_title('{} stack vs \n{} mbar geopotential height'.format(stackname, hgtname))   
-    mpl.pyplot.savefig(os.path.join(figloc, '{}_{}hgt.png'.format(stackname, hgtname)), dpi = 500)  
-    mpl.pyplot.close() 
+            corrgridNW[i, j] = np.corrcoef(hgts[:, i, j][mask], stacksNW[mask])[0,1]
+            
+    mask = ~np.isnan(stacksEur)
+    corrgridEur = np.zeros((hgts.shape[1], hgts.shape[2]))
+    for i in range(len(hgtlat)):
+        for j in range(len(hgtlon)):        
+            corrgridEur[i, j] = np.corrcoef(hgts[:, i, j][mask], stacksEur[mask])[0,1]
+            
+    levels = [-0.5, 0.5]
+    #gs_kw = dict(height_ratios=heights)    
+    RdGy = mpl.pyplot.get_cmap('RdGy_r')  
+    fig = mpl.pyplot.figure(figsize = (7.5, 4), constrained_layout=True)
+    gs = GridSpec(2, 2, height_ratios=[2.5, 1], wspace=0.1, hspace=0.025) 
 
-def MakeStackFig(os, np, mpl, years, stackNW, stackNW_std, stackSE, stackSE_std, PNA_DJF, figloc):
-    fig, ax = mpl.pyplot.subplots(nrows = 3, ncols = 1, sharex = True)
-    ax[0].errorbar(np.unique(years), stackNW, yerr = stackNW_std, fmt = 'o-', 
+    #plot the correlation in N hemisphere -- need significance bands too
+    hgtlat_edge = np.concatenate(([hgtlat[0]+(2.5/2)], hgtlat-(2.5/2))) 
+    x,y = np.meshgrid(np.concatenate((hgtlon, [360])), hgtlat_edge)
+    xctr, yctr = np.meshgrid(hgtlon+(2.5/2), hgtlat)
+
+    ax1 = mpl.pyplot.subplot(gs[0], projection=ccrs.PlateCarree())
+    ax1.add_feature(ctp.feature.COASTLINE, zorder=10, edgecolor='dimgray', linewidth = 0.75)
+    p = ax1.pcolormesh(x, y, corrgridNW,  vmin = -1, vmax = 1, cmap = RdGy, 
+                      transform = ccrs.PlateCarree(), alpha = 1)
+    cs= ax1.contour(xctr, yctr, corrgridNW, levels, colors = 'gray',
+              transform = ccrs.PlateCarree(), linewidth=1)
+    ax1.clabel(cs, inline=1, fontsize=10)
+    ax1.set_extent([-170, -55, 10, 80], ccrs.PlateCarree())
+    
+    ax2 = mpl.pyplot.subplot(gs[1], projection=ccrs.PlateCarree())
+    ax2.add_feature(ctp.feature.COASTLINE, zorder=10, edgecolor='dimgray', linewidth = 0.75)
+    p = ax2.pcolormesh(x, y, corrgridEur,  vmin = -1, vmax = 1, cmap = RdGy, 
+                      transform = ccrs.PlateCarree(), alpha = 1)
+    cs = ax2.contour(xctr, yctr, corrgridEur, levels, colors = 'gray',
+                  transform = ccrs.PlateCarree(), alpha = 1, linewidth=1)
+    ax2.clabel(cs, inline=1, fontsize=10)
+    ax2.set_extent([-50, 65, 10, 80], ccrs.PlateCarree())
+
+    ax3 = mpl.pyplot.subplot(gs[2])
+    
+    ax3.errorbar(np.unique(years), stacksNW, yerr = stacksNW_std, fmt = 'o-', 
                         ecolor = '#bababa', markerfacecolor = '#878787', 
                         markeredgecolor = 'black', color = 'black')
-    ax[0].plot([1960, 2016], [0, 0], color = '#bababa', zorder = 0)
-    ax[1].errorbar(np.unique(years), stackSE, yerr = stackSE_std, fmt = 'o-', 
-                        ecolor = '#f4a582', markerfacecolor = '#d6604d', 
-                        markeredgecolor = 'black', color = '#d6604d')
-    ax[1].plot([1960, 2016], [0, 0], color = '#bababa', zorder = 0)
-    ax[2].plot(np.unique(years), PNA_DJF, marker = 'o', 
-                         markerfacecolor = '#67a9cf', 
-                        markeredgecolor = 'black', color = '#2166ac')   
-    ax[2].plot([1960, 2016], [0, 0], color = '#bababa', zorder = 0)
-      
-      
-    ax[0].annotate('(a) northwest', xy = (0, 100), xytext = (0.02, 0.9), xycoords = 'axes fraction')
-    ax[1].annotate('(b) southeast', xy = (0, 100), xytext = (0.02, 0.9), xycoords = 'axes fraction')
-    ax[2].annotate('(c) PNA index', xy = (0, 100), xytext = (0.02, 0.9), xycoords = 'axes fraction')
-    ax[1].annotate( 'd18O anomaly stack', xy = (-0.05, 0.75), xytext = (0.05, 0.75), 
-      xycoords = 'figure fraction', rotation = 'vertical')
-    ax[1].set_xlabel('Year')
-    ax[2].set_ylabel('PNA index')
-    ax[2].set_xlim([1960, 2016])
-    mpl.pyplot.savefig(os.path.join(figloc, 'StackPlotPNA.png'), dpi = 500)
-
-def MakeSemivariogramFig(os, np, mpl, semidata, figloc):
-    rearth = 6371.0
-    timename = {'JJA':0, 'DJF':1} 
-    #length scale of synoptic systems
-    synoptic = 1000/rearth
-    longwave1 = 6000/rearth
-    longwave2 = 8000/rearth
-    quadrant = np.pi/2
-
-    #'JJA 5x5 agg data', 'JJA 5x5 ens', 'JJA 5x5 ens sub'
-    mpl.pyplot.figure(figsize = (4.5, 4))
-    xtickdict = {'{} 5x5 agg data': 1, '{} 5x5 ens sub': 2, '{} 5x5 ens': 3}
-    for i, sym in zip(timename.keys(), ['o', 's']) :
-        for j in xtickdict.keys():
-            mpl.pyplot.scatter(xtickdict[j], semidata.loc[1, j.format(i)],
-                                    c = '#5ab4ac', edgecolor = 'k', marker = sym, s = 60)
-            mpl.pyplot.scatter(xtickdict[j], semidata.loc[0, j.format(i)], 
-                                    c = '#d8b365', edgecolor = 'k', marker = sym, s = 60) 
-                                    
-    p1 = mpl.pyplot.scatter(1, -2, marker = 's', c = '#5ab4ac', edgecolor = 'k', label = 'color: Timeslice, symbol: DJF')  
-    p2 = mpl.pyplot.scatter(1, -2, marker = 'o', c = '#d8b365', edgecolor = 'k', label = 'color: Difference, symbol: JJA')
+    ax3.plot([1960, 2020], [0, 0], color = '#bababa', zorder = 0)
+             
+    ax4 = mpl.pyplot.subplot(gs[3])         
+    ax4.errorbar(np.unique(years), stacksEur, yerr = stacksEur_std, fmt = 'o-', 
+                        ecolor = '#bababa', markerfacecolor = '#878787', 
+                        markeredgecolor = 'black', color = 'black')
+    ax4.plot([1960, 2020], [0, 0], color = '#bababa', zorder = 0)
+    ax3.set_ylabel( '$\delta^{18}O$ anomaly'+'('+u'\u2030'+')')
+    ax3.annotate('Year', xy = (0.8, 0.02), xytext = (1, -0.4), xycoords = 'axes fraction')
+    ax3.set_xlim([1960, 2020])
+    ax4.set_xlim([1960, 2020])
+    ax3.set_ylim([-2.5, 3])
+    ax4.set_ylim([-2.5, 3])
+    ax3.spines['top'].set_visible(False)
+    ax4.spines['top'].set_visible(False)
+    ax3.spines['right'].set_visible(False)
+    ax4.spines['right'].set_visible(False)
+    ax1.annotate('(a)', xy=(0.03, 0.9), xytext = (0.03, 0.9), xycoords = 'axes fraction')
+    ax2.annotate('(b)', xy=(0.03, 0.9), xytext = (0.03, 0.9), xycoords = 'axes fraction')
+    ax3.annotate('(c)', xy=(0.03, 0.9), xytext = (0.03, 0.9), xycoords = 'axes fraction')
+    ax4.annotate('(d)', xy=(0.03, 0.9), xytext = (0.03, 0.9), xycoords = 'axes fraction')
+    ax4.set_yticks([])
+    ax3.set_xticklabels(ax3.get_xticks().astype(int), rotation = 30)
+    ax4.set_xticklabels(ax4.get_xticks().astype(int), rotation = 30)
     
-    #mpl.pyplot.plot([5.5, 5.5], [0, 2.5], color = 'gray', linewidth = 1.5)   
-    mpl.pyplot.plot([0, 7], [synoptic, synoptic], color = 'gray', linewidth = 1.5, zorder = 0, linestyle = '--')
-    mpl.pyplot.annotate('Mesoscale', xy = (5, synoptic), xytext = (4.4, synoptic-0.1), xycoords = 'data', size = 8)
-    mpl.pyplot.annotate('Synoptic scale', xy = (5, synoptic), xytext = (4.4, synoptic+0.05), xycoords = 'data', size = 8)
-    mpl.pyplot.plot([0, 7], [longwave1, longwave1], color = 'gray', linewidth = 1.5, zorder = 0, linestyle = '--')
-    mpl.pyplot.annotate('Short waves', xy = (5, longwave1-0.3), xytext = (4.4, longwave1-0.3), xycoords = 'data', size = 8)
-    mpl.pyplot.annotate('Rossby waves', xy = (5, longwave2-0.2), xytext = (4.4, longwave2-0.2), xycoords = 'data', size = 8)
-    mpl.pyplot.plot([0, 7], [longwave2, longwave2], color = 'gray', linewidth = 1.5, zorder = 0, linestyle = '--')
-    mpl.pyplot.plot([0, 7], [quadrant, quadrant], color = 'gray', linewidth = 1.5, zorder = 0, linestyle = '--')
-    mpl.pyplot.annotate('Globe quadrant', xy = (5, quadrant-0.05), xytext = (4.4, quadrant-0.1), xycoords = 'data', size = 8)
-    #mpl.pyplot.plot([0, 7], [hemisphere, hemisphere], color = 'gray', linewidth = 1.5, zorder = 0)
-                         
-    mpl.pyplot.ylim([0, 1.75])
-    mpl.pyplot.xlim([0, 6])
-    #mpl.pyplot.xlabel('dataset')
-    labels = [lab[3:] for lab in xtickdict.keys()]
-    mpl.pyplot.xticks(xtickdict.values(), labels, rotation = 20)
-    mpl.pyplot.ylabel('Semivariogram lag, radians')
-    mpl.pyplot.legend([p1, p2], ['color: average, symbol: DJF', 'color: change, symbol: JJA'], 
-                      loc = (0.15, 0.93), framealpha = 1)
-    mpl.pyplot.subplots_adjust(top = 0.9, bottom = 0.15, left = 0.15, right = 0.95)
-    mpl.pyplot.savefig(os.path.join(figloc, 'SemivariogramLag.png'), dpi = 500)
+    #make space for a colorbar by  using subplots_adjust
+    mpl.pyplot.subplots_adjust(bottom=0.12, right=0.8, top=1.1, left = 0.08)
+    cax = mpl.pyplot.axes([0.82, 0.2, 0.025, 0.6])
+    cb = mpl.pyplot.colorbar(p, cax=cax)  
+    cb.set_label('Correlation coefficient of\n $\delta^{18}O$'+
+                 ' anomaly with 500 hPa geopotential height')
+    mpl.pyplot.savefig(os.path.join(figloc, 'Fig4.eps'), dpi = 500)
+    
+
+  
